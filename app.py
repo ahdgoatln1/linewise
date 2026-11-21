@@ -1,6 +1,7 @@
 import ast
 import html
 import re
+from itertools import zip_longest
 
 import streamlit as st
 
@@ -17,10 +18,17 @@ h1,h2,h3,.hero h1{font-family:'Fraunces',Georgia,serif!important;color:#26221d!i
 .hero{border-bottom:2px solid #26221d;margin-bottom:6px;padding-bottom:10px}
 .hero h1{font-size:2.6rem;margin:0;letter-spacing:-.5px}
 .hero p{margin:2px 0 0;color:#5f574b!important;font-size:1.05rem}
-.stTabs [data-baseweb="tab-list"]{gap:22px;border-bottom:1px solid #d9cfbc}
-.stTabs [data-baseweb="tab"] p{font-size:1.05rem;font-weight:600;color:#6d6455!important}
-.stTabs [aria-selected="true"] p{color:#b4492f!important}
-.stTabs [data-baseweb="tab-highlight"]{background:#b4492f}
+.stTabs [data-baseweb="tab-list"]{gap:0;border:1px solid #26221d;border-radius:4px;overflow:hidden;background:#faf5ea;margin-top:6px}
+.stTabs [data-baseweb="tab"]{flex:1;height:48px;justify-content:center;border-right:1px solid #26221d;background:#faf5ea}
+.stTabs [data-baseweb="tab"]:last-of-type{border-right:0}
+.stTabs [data-baseweb="tab"] p{font-size:1.05rem;font-weight:700;color:#26221d!important;opacity:1!important}
+.stTabs [aria-selected="true"]{background:#26221d!important}
+.stTabs [aria-selected="true"] p{color:#f3ede2!important}
+.stTabs [data-baseweb="tab-highlight"],.stTabs [data-baseweb="tab-border"]{display:none}
+.stMarkdown p.lab{font-size:.75rem;letter-spacing:.12em;text-transform:uppercase;color:#b4492f!important;font-weight:700;margin:14px 0 0}
+.num{font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:#b4492f;font-weight:700;margin-right:8px}
+[data-testid="stVerticalBlockBorderWrapper"]{background:#faf5ea;border-color:#d9cfbc!important;border-radius:3px}
+.stTextArea textarea{background:#fffaf0;color:#26221d;border:1px solid #cdbfa6;font-family:ui-monospace,Menlo,Consolas,monospace}
 .step{margin:22px 0 4px;font-weight:600;color:#26221d}
 .step .n{display:inline-block;width:26px;height:26px;line-height:26px;text-align:center;background:#b4492f;color:#f3ede2;border-radius:50%;margin-right:9px;font-size:.85rem}
 .why{color:#5f574b!important;font-size:.95rem;margin:4px 0 0}
@@ -32,7 +40,7 @@ h1,h2,h3,.hero h1{font-family:'Fraunces',Georgia,serif!important;color:#26221d!i
 .stTextInput input{background:#fffaf0;color:#26221d;border:1px solid #cdbfa6;font-family:ui-monospace,Menlo,Consolas,monospace}
 [data-testid="stExpander"]{border:1px solid #d9cfbc;background:#faf5ea;border-radius:2px}
 </style>
-<div class="hero"><h1>Linewise</h1><p>Learn Python one line at a time. Read a step, type it, watch it work.</p></div>
+<div class="hero"><h1>Linewise</h1><p>Learn Python by typing it. Each step shows the code, you type it, and it is checked on the spot.</p></div>
 """
 st.markdown(CSS, unsafe_allow_html=True)
 
@@ -134,6 +142,10 @@ def depth(code):
     return sum(c.count(x) for x in "([{") - sum(c.count(x) for x in ")]}")
 
 
+def fix(t):
+    return t.translate({0x201C: '"', 0x201D: '"', 0x2018: "'", 0x2019: "'", 0xA0: " "})
+
+
 def why_syntax(e, t):
     m = (e.msg or "").lower()
     if "expected ':'" in m:
@@ -147,7 +159,7 @@ def why_syntax(e, t):
     if "maybe you meant '=='" in m:
         return ("SyntaxError: = versus ==", "One = stores a value. Two == compares two values.", t.replace("=", "==", 1))
     if "indent" in m:
-        return ("IndentationError: " + e.msg, "A line right after a colon must be indented inside it, and lines outside must line up with the block.", "Let the app indent for you. Press Enter on an empty line to step out of a block.")
+        return ("IndentationError: " + e.msg, "A line right after a colon must be indented inside it, and lines outside must line up with the block.", "Start the line with 4 spaces to put it inside the block. In Practice this is done for you, and an empty Enter steps out.")
     if "cannot assign" in m:
         return ("SyntaxError: cannot store a value there", "The left side of = must be a plain name, like score.", "score = 10")
     return ("SyntaxError: " + (e.msg or "invalid syntax"), "Python could not read this line.", "Check quotes, brackets, colons and spelling.")
@@ -240,6 +252,33 @@ LESSONS = [
      ]},
 ]
 
+LISTS = {"t": "Lists and dictionaries", "intro": "Real programs store many values at once. A list keeps items in order. A dictionary keeps labelled facts.",
+         "steps": [
+             ("Make a list of three fruits.", 'fruits = ["apple", "banana", "cherry"]', "Square brackets make a list. Items are separated by commas."),
+             ("Add one more item to the end.", 'fruits.append("mango")', "append adds to the end of the list. The dot means: do this action to fruits."),
+             ("Show how many items there are.", "print(len(fruits))", "len counts the items. It prints 4."),
+             ("Go through the list one item at a time.", 'for fruit in fruits:\n    print(fruit)', "The loop puts each item into fruit, one by one, and runs the indented line each time."),
+             ("Make a dictionary: labels on the left, values on the right.", 'person = {"name": "Sam", "age": 20}', "Curly brackets make a dictionary. Each entry is label: value."),
+             ("Look up one value by its label.", 'print(person["name"])', "Square brackets with a label fetch the value stored under it."),
+         ]}
+FUNCS = {"t": "Write your own functions", "intro": "A function is a named recipe you write once and use as often as you like.",
+         "steps": [
+             ("Define a function that greets someone. The second line starts with 4 spaces.", 'def greet(person):\n    print(f"Hello, {person}!")', "def creates the function. person is a slot filled in when you use it. Nothing prints yet."),
+             ("Use it by calling its name with a value.", 'greet("Sam")', "Calling runs the function with Sam in the slot. Try your own name."),
+             ("Define a function that gives a result back.", "def add(a, b):\n    return a + b", "return hands a value back to whoever called the function."),
+             ("Use it and print the answer.", "print(add(2, 3))", "add(2, 3) becomes 5, and print shows it."),
+         ]}
+LESSONS[4:4] = [LISTS, FUNCS]
+GOALS = [
+    ("Use print to show text", "A program that greets the world"),
+    ("Store values in variables and mix them into sentences", "A program that introduces you"),
+    ("Make a program choose with if, elif and else", "A small weather advisor"),
+    ("Repeat work with for and while loops", "A counter, an adder and a countdown"),
+    ("Keep many values together in lists and dictionaries", "A small data set you can loop over"),
+    ("Write reusable functions that take input and give back results", "A greeter and a calculator"),
+    ("Combine lists, loops and text to draw a picture", "A heart made of text"),
+]
+
 EXPLAIN = [
     ("What is code?", "Code is a list of instructions for the computer, written in a language it understands. Python runs your instructions from the top line to the bottom line, one at a time. If a line is wrong, Python stops and tells you where."),
     ("Symbols you will keep seeing", "- `=` stores a value: `age = 20`\n- `==` asks if two things are equal: `age == 20`\n- `:` at the end of a line opens a block (if, for, while, def)\n- Indentation (4 spaces) shows which lines belong inside a block\n- Quotes `\"like this\"` mark text\n- Brackets `( )` hold what you give to something, like `print(...)`\n- `[ ]` make a list\n- `#` starts a comment that Python ignores"),
@@ -264,7 +303,7 @@ def rej(line, what, why, fix):
 
 def submit():
     s = st.session_state
-    t = (s.get("raw") or "").strip()
+    t = fix((s.get("raw") or "").strip())
     if not t:
         if s.lines and s.lines[-1].rstrip().endswith(":"):
             s.msg = {"k": "n", "title": "Not yet", "text": "The block above needs at least one indented line inside it first."}
@@ -315,6 +354,43 @@ def reset():
     s.lines, s.lvl, s.out, s.msg = [], 0, "", None
 
 
+def norm(t):
+    return "\n".join(l.rstrip() for l in fix(t).replace("\t", "    ").split("\n") if l.strip())
+
+
+def shape(code):
+    c = re.sub(r"\"[^\"]*\"|'[^']*'", "S", code)
+    c = re.sub(r"\b\d+(\.\d+)?\b", "N", c)
+    return [(len(l) - len(l.lstrip()), re.sub(r"\s+", " ", l.strip())) for l in c.split("\n") if l.strip()]
+
+
+def check_step(user, target, prior):
+    u, g = norm(user), norm(target)
+    if not u:
+        return ("bad", "Nothing typed yet", "Type the code from the box above, then press Check.", target)
+    full = "\n".join(prior + [u])
+    try:
+        ast.parse(full)
+    except SyntaxError as e:
+        return ("bad",) + why_syntax(e, u.split("\n")[0])
+    strict = "***" in g
+    if u == g or (not strict and shape(u) == shape(g)):
+        o, err = run(full)
+        if err:
+            return ("bad",) + why_run(err)
+        return ("ok", "Correct." if u == g else "Correct. Your text differs from the example, and that is fine.")
+    for i, (a, b) in enumerate(zip_longest(u.split("\n"), g.split("\n"))):
+        if a != b:
+            what = f"Line {i + 1} is missing" if a is None else (f"Line {i + 1} is extra" if b is None else f"Line {i + 1} does not match the example")
+            why = "Python is case sensitive: print is not Print." if u.lower() == g.lower() else "Compare it with the example, character by character. Spaces at the start of a line matter."
+            return ("bad", what, why, b if b is not None else "Delete this line.")
+    return ("bad", "Not quite", "Compare it with the example.", target)
+
+
+def goto(i):
+    st.session_state.lesson = i
+
+
 def card(kind, title, text):
     st.markdown(f'<div class="card {kind}"><b>{html.escape(title)}</b><p>{html.escape(text)}</p></div>', unsafe_allow_html=True)
 
@@ -326,30 +402,63 @@ def show_error(e):
 
 
 # ---------------------------------------------------------------- tabs
-for k, v in {"lines": [], "lvl": 0, "out": "", "msg": None}.items():
+for k, v in {"lines": [], "lvl": 0, "out": "", "msg": None, "lesson": None, "done": {}, "flash": None}.items():
     st.session_state.setdefault(k, v)
 
 tab_learn, tab_practice, tab_explain = st.tabs(["Learn", "Practice", "Explain"])
 
 with tab_learn:
-    names = [f"{i + 1}. {L['t']}" for i, L in enumerate(LESSONS)]
-    pick = st.radio("Lesson", names, label_visibility="collapsed")
-    L = LESSONS[names.index(pick)]
-    st.markdown(f"### {L['t']}")
-    st.write(L["intro"])
-    for i, (do, code, why) in enumerate(L["steps"], 1):
-        st.markdown(f'<div class="step"><span class="n">{i}</span>{html.escape(do)}</div>', unsafe_allow_html=True)
-        st.code(code, language="python")
-        st.markdown(f'<p class="why">{html.escape(why)}</p>', unsafe_allow_html=True)
-    st.markdown("---")
-    st.write("Typed everything? Press the button to run the whole lesson and compare with your own result.")
-    if st.button("Run this lesson", key="run_" + pick):
-        o, e = run("\n".join(c for _, c, _ in L["steps"]))
-        st.markdown("**Output**")
-        st.code(o or "(nothing printed)")
-        if e:
-            show_error(e)
-    st.caption("Next: open the Practice tab and type the lines yourself. The app will check each one.")
+    ss = st.session_state
+    total = sum(len(x["steps"]) for x in LESSONS)
+    got = sum(len(v) for v in ss.done.values())
+    li = ss.lesson
+    if li is None:
+        st.markdown('<p class="lab">Your course</p>', unsafe_allow_html=True)
+        st.markdown("### Learn Python by typing it")
+        st.write("Seven short lessons, no experience needed. In every step you see exactly what to type, you type it yourself, and the app checks it and shows what your code does.")
+        st.progress(got / total, text=f"{got} of {total} steps complete")
+        for i, x in enumerate(LESSONS):
+            n, t = len(ss.done.get(i, [])), len(x["steps"])
+            with st.container(border=True):
+                st.markdown(f'<span class="num">Lesson {i + 1}</span> **{x["t"]}**', unsafe_allow_html=True)
+                st.markdown(f"**You will learn:** {GOALS[i][0]}  \n**You will build:** {GOALS[i][1]}")
+                st.button("Start" if n == 0 else ("Review" if n >= t else f"Continue ({n}/{t})"), key=f"go{i}", on_click=goto, args=(i,))
+    else:
+        x = LESSONS[li]
+        done = ss.done.setdefault(li, [])
+        si, t = len(done), len(x["steps"])
+        st.button("← All lessons", on_click=goto, args=(None,))
+        st.markdown(f"### {li + 1}. {x['t']}")
+        st.write(x["intro"])
+        st.progress(si / t, text=f"Step {si + 1} of {t}" if si < t else "Lesson complete")
+        if ss.flash:
+            card("ok", "Correct", ss.flash)
+            ss.flash = None
+        if done:
+            with st.expander("Your program so far and what it prints", expanded=si >= t):
+                st.code("\n".join(done), language="python")
+                st.code(run("\n".join(done))[0] or "(nothing printed yet)")
+        if si < t:
+            do, code, why = x["steps"][si]
+            st.markdown(f'<div class="step"><span class="n">{si + 1}</span>{html.escape(do)}</div>', unsafe_allow_html=True)
+            st.code(code, language="python")
+            st.markdown(f'<p class="why">{html.escape(why)}</p>', unsafe_allow_html=True)
+            with st.form(f"lf{li}_{si}"):
+                txt = st.text_area("Now type it yourself", key=f"lt{li}_{si}", height=270 if code.count("\n") > 4 else (140 if "\n" in code else 90), placeholder="Type the code from the box above. Indent with 4 spaces.")
+                go = st.form_submit_button("Check my code")
+            if go:
+                r = check_step(txt, code, done)
+                if r[0] == "ok":
+                    done.append(norm(txt))
+                    ss.flash = r[1]
+                    st.rerun()
+                card("bad", r[1], r[2])
+                st.markdown("**It should be:**")
+                st.code(r[3], language="python")
+        else:
+            card("ok", "Lesson complete", "You typed every step yourself. Open the Practice tab to experiment with these ideas.")
+            if li + 1 < len(LESSONS):
+                st.button("Next lesson →", on_click=goto, args=(li + 1,))
 
 with tab_practice:
     st.markdown("Type one line at a time. If it is valid and fits the lines above, it is added. If not, it is thrown away and you are told why.")
